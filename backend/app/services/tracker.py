@@ -4,14 +4,6 @@ import pandas as pd
 import time
 from typing import List, Dict, Any, Optional
 
-# Configure structured logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
 logger = logging.getLogger("PolymarketInsiderTracker")
 
 class PolymarketInsiderTracker:
@@ -230,8 +222,16 @@ class PolymarketInsiderTracker:
             if avg_trade_size >= 1500.0:
                 execution_style = "Aggressive Take (Crossed Spread)"
                 
+        # Fetch cached metadata
+        meta = self.holders_metadata.get(user_address.lower(), {})
+        
         return {
             "wallet": user_address,
+            "name": meta.get("name", ""),
+            "pseudonym": meta.get("pseudonym", ""),
+            "bio": meta.get("bio", ""),
+            "profile_image": meta.get("profileImage", ""),
+            "profile_url": meta.get("profileUrl", f"https://polymarket.com/profile/{user_address}"),
             "total_portfolio_value": total_portfolio_value,
             "political_exposure": political_value,
             "domain_score": politics_ratio,
@@ -240,16 +240,16 @@ class PolymarketInsiderTracker:
             "execution_style": execution_style
         }
 
-    def run_pipeline(self, target_condition_id: str):
+    def run_pipeline(self, target_condition_id: str) -> List[Dict[str, Any]]:
         """
-        Runs the complete discovery pipeline and displays a clean sorted dashboard of insider wallets.
+        Runs the complete discovery pipeline and returns a list of qualified domain specialist profiles.
         """
         logger.info("Initializing Polymarket Insider Discovery Pipeline...")
         holders = self.fetch_top_holders(target_condition_id)
         
         if not holders:
             logger.error("No holders discovered. Pipeline terminated.")
-            return
+            return []
             
         qualified_insiders = []
         
@@ -263,36 +263,4 @@ class PolymarketInsiderTracker:
             except Exception as e:
                 logger.error(f"Error analyzing wallet {wallet}: {e}")
                 
-        if not qualified_insiders:
-            print("\n==================================================================================")
-            print("         [*] POLYMARKET ALGORITHMIC INSIDER DETECTION DASHBOARD [*]")
-            print("==================================================================================")
-            print("  No wallets matched the strict insider criteria in this run.")
-            print("==================================================================================")
-            return
-            
-        df_results = pd.DataFrame(qualified_insiders)
-        df_results = df_results.sort_values(by="target_conviction", ascending=False)
-        
-        print("\n==================================================================================")
-        print("         [*] POLYMARKET ALGORITHMIC INSIDER DETECTION DASHBOARD [*]")
-        print("==================================================================================")
-        print(f"{'Wallet Address':<44} | {'Exposure':<10} | {'Domain Score':<12} | {'Style':<25}")
-        print("-" * 100)
-        
-        for _, row in df_results.iterrows():
-            wallet = row['wallet']
-            exposure_str = f"${row['target_conviction']:,.2f}"
-            domain_score_str = f"{row['domain_score']:.1%}"
-            style_str = f"{row['execution_style']} ({row['target_outcome']})"
-            print(f"{wallet:<44} | {exposure_str:<10} | {domain_score_str:<12} | {style_str:<25}")
-            
-        print("==================================================================================\n")
-
-
-if __name__ == "__main__":
-    # Will Bitcoin hit $1m before GTA VI? market condition ID (active & highly populated)
-    TARGET_CONDITION_ID = "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2"
-    
-    tracker = PolymarketInsiderTracker()
-    tracker.run_pipeline(TARGET_CONDITION_ID)
+        return qualified_insiders
