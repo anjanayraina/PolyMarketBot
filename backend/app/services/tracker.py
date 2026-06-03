@@ -151,9 +151,16 @@ class PolymarketInsiderTracker:
         # Ensure correct numeric types
         df_pos['currentValue'] = df_pos['currentValue'].astype(float)
         df_pos['size'] = df_pos['size'].astype(float)
+        df_pos['cashPnl'] = df_pos['cashPnl'].astype(float)
         
         total_portfolio_value = df_pos['currentValue'].sum()
         if total_portfolio_value <= 0:
+            return None
+            
+        # --- Winning History / Profitability Filter ---
+        net_pnl = df_pos['cashPnl'].sum()
+        if net_pnl <= 0:
+            logger.info(f"Wallet {user_address} failed Profitability Filter (Net PnL must be > 0, current: ${net_pnl:,.2f}).")
             return None
             
         # Determine political exposure for each position
@@ -194,9 +201,14 @@ class PolymarketInsiderTracker:
         df_trades['price'] = df_trades['price'].astype(float)
         df_trades['value'] = df_trades['size'] * df_trades['price']
         
+        # --- Trade History Depth Filter ---
+        total_trades = len(df_trades)
+        if total_trades < 5:
+            logger.info(f"Wallet {user_address} failed Trade History Depth (Only {total_trades} trades found).")
+            return None
+            
         # Market Maker Filter
         # 1. Balanced buy/sell trade count
-        total_trades = len(df_trades)
         buys = len(df_trades[df_trades['side'].str.upper() == 'BUY'])
         sells = len(df_trades[df_trades['side'].str.upper() == 'SELL'])
         
@@ -217,11 +229,39 @@ class PolymarketInsiderTracker:
         target_trades = df_trades[df_trades['conditionId'].str.lower() == target_condition_id.lower()]
         execution_style = "Quiet Accumulation"
         if not target_trades.empty:
-            avg_trade_size = target_trades['value'].mean()
+            target_avg_size = target_trades['value'].mean()
             # If placing large block trades on average, they "loudly crossed the spread"
-            if avg_trade_size >= 1500.0:
+            if target_avg_size >= 1500.0:
                 execution_style = "Aggressive Take (Crossed Spread)"
                 
+        # --- NEW COPY-TRADING METRICS ---
+        total_positions = len(df_pos)
+        positive_pnl_positions = len(df_pos[df_pos['cashPnl'] > 0])
+        win_rate = positive_pnl_positions / total_positions if total_positions > 0 else 0.0
+        
+        net_pnl = df_pos['cashPnl'].sum()
+        
+        global_total_trades = len(df_trades)
+        global_avg_trade_size = df_trades['value'].mean() if global_total_trades > 0 else 0.0
+        
+        # Calculate Copy-Trade Fit Score (0 - 100)
+        win_rate_score = win_rate * 30.0
+        net_pnl_score = min(30.0, (max(0.0, net_pnl) / 20000.0) * 30.0)
+        trade_depth_score = min(20.0, (global_total_trades / 40.0) * 20.0)
+        domain_specialist_score = politics_ratio * 20.0
+        
+        copy_trade_score = win_rate_score + net_pnl_score + trade_depth_score + domain_specialist_score
+        copy_trade_score = max(0.0, min(100.0, copy_trade_score))
+        
+        if copy_trade_score >= 85.0:
+            copy_trade_rating = "Excellent (Tier 1)"
+        elif copy_trade_score >= 70.0:
+            copy_trade_rating = "Good (Tier 2)"
+        elif copy_trade_score >= 50.0:
+            copy_trade_rating = "Caution (Speculative)"
+        else:
+            copy_trade_rating = "Avoid (High Risk)"
+
         # Fetch cached metadata
         meta = self.holders_metadata.get(user_address.lower(), {})
         
@@ -237,7 +277,13 @@ class PolymarketInsiderTracker:
             "domain_score": politics_ratio,
             "target_conviction": conviction_size,
             "target_outcome": target_outcome,
-            "execution_style": execution_style
+            "execution_style": execution_style,
+            "win_rate": win_rate,
+            "net_pnl": net_pnl,
+            "total_trades": global_total_trades,
+            "avg_trade_size": global_avg_trade_size,
+            "copy_trade_score": copy_trade_score,
+            "copy_trade_rating": copy_trade_rating
         }
 
     def run_pipeline(self, target_condition_id: str) -> List[Dict[str, Any]]:

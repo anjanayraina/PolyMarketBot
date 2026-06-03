@@ -422,3 +422,125 @@ button:disabled {
     background: rgba(255, 255, 255, 0.08);
     border-color: rgba(255, 255, 255, 0.15);
 }
+
+/* Dropdown market-select styling */
+.market-select {
+    width: 100%;
+    background: rgba(15, 17, 26, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 0.85rem 1.2rem;
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-family: inherit;
+    outline: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.market-select:focus {
+    border-color: var(--color-indigo);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+}
+
+.market-select option {
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+}
+
+/* Rating Badge styles */
+.rating-badge {
+    margin-left: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    padding: 0.4rem 0.6rem;
+    min-width: 80px;
+    text-align: center;
+    font-weight: 700;
+}
+
+.rating-excellent {
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.2);
+}
+.rating-excellent .rating-score {
+    color: var(--color-emerald);
+    font-size: 1.15rem;
+}
+.rating-excellent .rating-label {
+    color: var(--color-emerald);
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.rating-good {
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+}
+.rating-good .rating-score {
+    color: var(--color-indigo);
+    font-size: 1.15rem;
+}
+.rating-good .rating-label {
+    color: var(--color-indigo);
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.rating-caution {
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.rating-caution .rating-score {
+    color: #fbbf24;
+    font-size: 1.15rem;
+}
+.rating-caution .rating-label {
+    color: #fbbf24;
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.rating-avoid {
+    background: rgba(244, 63, 94, 0.1);
+    border: 1px solid rgba(244, 63, 94, 0.3);
+}
+.rating-avoid .rating-score {
+    color: #f87171;
+    font-size: 1.15rem;
+}
+.rating-avoid .rating-label {
+    color: #f87171;
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+/* Custom metric color values */
+.metric-value.violet {
+    color: #a78bfa;
+}
+.metric-value.amber {
+    color: #fbbf24;
+}
+.metric-value.blue {
+    color: #60a5fa;
+}
+.metric-value.rose {
+    color: #f87171;
+}
+.metric-value.platinum {
+    color: #cbd5e1;
+}
