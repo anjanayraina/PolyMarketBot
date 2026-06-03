@@ -2,7 +2,13 @@ import logging
 import requests
 import pandas as pd
 import time
+import os
+import json
 from typing import List, Dict, Any, Optional
+
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
 
 logger = logging.getLogger("PolymarketInsiderTracker")
 
@@ -311,10 +317,99 @@ class PolymarketInsiderTracker:
             "copy_trade_rating": copy_trade_rating
         }
 
-    def run_pipeline(self, target_condition_id: str) -> List[Dict[str, Any]]:
+    def load_scan_cache(self, condition_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Loads cached scan results from local file if it exists.
+        """
+        cache_path = os.path.join(DATA_DIR, f"scan_{condition_id.lower()}.json")
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading scan cache for {condition_id}: {e}")
+        return None
+
+    def save_scan_cache(self, condition_id: str, results: List[Dict[str, Any]], target_category: str):
+        """
+        Saves scan results and target category locally.
+        """
+        cache_path = os.path.join(DATA_DIR, f"scan_{condition_id.lower()}.json")
+        try:
+            with open(cache_path, "w") as f:
+                json.dump({
+                    "timestamp": time.time(),
+                    "target_category": target_category,
+                    "results": results
+                }, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving scan cache for {condition_id}: {e}")
+
+    def get_and_track_wallet_trades(self, user_address: str) -> Dict[str, Any]:
+        """
+        Fetches latest trades for a wallet, compares with local history to identify new trades,
+        updates the history, and returns all trades and new trades.
+        """
+        user_address = user_address.lower()
+        trades_file = os.path.join(DATA_DIR, f"wallet_{user_address}_trades.json")
+        
+        # Load old trades
+        old_trades = []
+        if os.path.exists(trades_file):
+            try:
+                with open(trades_file, "r") as f:
+                    old_trades = json.load(f)
+            except Exception as e:
+                logger.error(f"Error reading local trades file for {user_address}: {e}")
+                
+        # Fetch latest trades
+        latest_trades = self.fetch_user_trades(user_address)
+        
+        def get_trade_key(t: Dict[str, Any]) -> str:
+            return t.get("id") or f"{t.get('transactionHash')}_{t.get('timestamp')}_{t.get('size')}_{t.get('price')}"
+            
+        old_keys = {get_trade_key(t) for t in old_trades if t}
+        
+        new_trades = []
+        for t in latest_trades:
+            if get_trade_key(t) not in old_keys:
+                new_trades.append(t)
+                
+        # Merge all unique trades
+        merged_trades_map = {get_trade_key(t): t for t in (old_trades + latest_trades) if t}
+        merged_trades = list(merged_trades_map.values())
+        
+        try:
+            merged_trades.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+        except Exception:
+            pass
+            
+        try:
+            with open(trades_file, "w") as f:
+                json.dump(merged_trades, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving trades file for {user_address}: {e}")
+            
+        return {
+            "all_trades": merged_trades,
+            "new_trades": new_trades,
+            "new_count": len(new_trades)
+        }
+
+    def run_pipeline(self, target_condition_id: str, bypass_cache: bool = False) -> List[Dict[str, Any]]:
         """
         Runs the complete discovery pipeline and returns a list of qualified domain specialist profiles.
         """
+        # If cache is not bypassed, check if we have a fresh copy (< 1 hour old)
+        if not bypass_cache:
+            cached_data = self.load_scan_cache(target_condition_id)
+            if cached_data:
+                # 3600 seconds = 1 hour
+                if time.time() - cached_data.get("timestamp", 0) < 3600:
+                    logger.info(f"Using cached scan results for {target_condition_id}")
+                    self.last_target_category = cached_data.get("target_category", "politics")
+                    return cached_data.get("results", [])
+
         logger.info("Initializing Polymarket Insider Discovery Pipeline...")
         
         # Resolve target event category
@@ -351,5 +446,8 @@ class PolymarketInsiderTracker:
                     qualified_insiders.append(insider_profile)
             except Exception as e:
                 logger.error(f"Error analyzing wallet {wallet}: {e}")
+                
+        # Save to local cache
+        self.save_scan_cache(target_condition_id, qualified_insiders, target_category)
                 
         return qualified_insiders

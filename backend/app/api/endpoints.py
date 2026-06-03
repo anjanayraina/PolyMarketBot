@@ -13,16 +13,17 @@ def scan_market(
     condition_id: str = Query(
         "0xbb57ccf5853a85487bc3d83d04d669310d28c6c810758953b9d9b91d1aee89d2", 
         description="The Polymarket Condition ID to analyze."
-    )
+    ),
+    bypass_cache: bool = Query(False, description="Bypass local cache and scan API")
 ):
     """
     Triggers the insider tracking pipeline for a specific market condition ID
     and returns a strictly validated Pydantic model response.
     """
-    logger.info(f"API Scan triggered via Router for Condition ID: {condition_id}")
+    logger.info(f"API Scan triggered via Router for Condition ID: {condition_id} (bypass_cache={bypass_cache})")
     try:
         tracker = PolymarketInsiderTracker()
-        results = tracker.run_pipeline(condition_id)
+        results = tracker.run_pipeline(condition_id, bypass_cache=bypass_cache)
         target_category = getattr(tracker, "last_target_category", "politics")
         return {
             "status": "success",
@@ -37,6 +38,29 @@ def scan_market(
             status_code=500,
             detail=f"Algorithmic pipeline error: {str(e)}"
         )
+
+@router.get("/wallet/trades")
+def get_wallet_trades(wallet: str = Query(..., description="The wallet address to track trades for")):
+    """
+    Retrieves all trades for a wallet, tracks new trades since the last check, and saves the history locally.
+    """
+    try:
+        tracker = PolymarketInsiderTracker()
+        results = tracker.get_and_track_wallet_trades(wallet)
+        return {
+            "status": "success",
+            "wallet": wallet,
+            "all_trades": results["all_trades"],
+            "new_trades": results["new_trades"],
+            "new_count": results["new_count"]
+        }
+    except Exception as e:
+        logger.error(f"Error checking wallet trades: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error checking wallet trades: {str(e)}"
+        )
+
 
 @router.get("/resolve")
 def resolve_market(query: str = Query(..., description="URL, slug, or title of the market")):

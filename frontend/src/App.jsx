@@ -8,6 +8,12 @@ function App() {
   const [insiders, setInsiders] = useState([]);
   const [hasScanned, setHasScanned] = useState(false);
   const [targetCategory, setTargetCategory] = useState('politics');
+  const [bypassCache, setBypassCache] = useState(false);
+  const [selectedWalletForTrades, setSelectedWalletForTrades] = useState(null);
+  const [walletTrades, setWalletTrades] = useState([]);
+  const [newTrades, setNewTrades] = useState([]);
+  const [isLoadingTrades, setIsLoadingTrades] = useState(false);
+  const [showTradesModal, setShowTradesModal] = useState(false);
 
   // Active markets available for selection (Prepopulated with geopolitical presets)
   const [activeMarkets, setActiveMarkets] = useState([
@@ -123,6 +129,33 @@ function App() {
     setSelectedMarketIds(prev => prev.filter(mid => mid !== id));
   };
 
+  const formatTradeTimestamp = (ts) => {
+    if (!ts) return 'Unknown Time';
+    if (isNaN(ts)) {
+      return new Date(ts).toLocaleString();
+    }
+    return new Date(parseFloat(ts) * 1000).toLocaleString();
+  };
+
+  const handleViewTrades = async (walletAddress) => {
+    setIsLoadingTrades(true);
+    setSelectedWalletForTrades(walletAddress);
+    setShowTradesModal(true);
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/wallet/trades?wallet=${walletAddress}`);
+      if (!response.ok) {
+        throw new Error("Failed to fetch wallet trades.");
+      }
+      const data = await response.json();
+      setWalletTrades(data.all_trades || []);
+      setNewTrades(data.new_trades || []);
+    } catch (err) {
+      alert("Error loading trades: " + err.message);
+    } finally {
+      setIsLoadingTrades(false);
+    }
+  };
+
   const triggerMultiScan = async () => {
     if (selectedMarketIds.length === 0) {
       alert("Please select at least one active market to scan.");
@@ -143,7 +176,7 @@ function App() {
     try {
       const scanPromises = selectedMarketIds.map(async (id) => {
         try {
-          const response = await fetch(`http://127.0.0.1:8000/api/scan?condition_id=${id}`);
+          const response = await fetch(`http://127.0.0.1:8000/api/scan?condition_id=${id}&bypass_cache=${bypassCache}`);
           if (!response.ok) {
             throw new Error(`Failed scanning condition ID: ${id}`);
           }
@@ -325,11 +358,24 @@ function App() {
           })}
         </div>
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+          <input 
+            type="checkbox" 
+            id="bypassCacheCheckbox" 
+            checked={bypassCache} 
+            onChange={(e) => setBypassCache(e.target.checked)}
+            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+          />
+          <label htmlFor="bypassCacheCheckbox" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--text-secondary)' }}>
+            Force Refresh (Bypass local cache)
+          </label>
+        </div>
+
         <button 
           id="scanBtn" 
           onClick={triggerMultiScan} 
           disabled={isScanning || selectedMarketIds.length === 0}
-          style={{ width: '100%', marginTop: '1rem', padding: '1rem' }}
+          style={{ width: '100%', marginTop: '0.75rem', padding: '1rem' }}
         >
           {isScanning ? "Scanning Selected Markets in Parallel..." : `Scan ${selectedMarketIds.length} Selected Markets`}
         </button>
@@ -454,9 +500,24 @@ function App() {
                       <span className="badge outcome">Outcomes: {insider.target_outcome}</span>
                     </div>
 
-                    <a className="profile-btn" href={insider.profile_url} target="_blank" rel="noopener noreferrer">
-                      View Polymarket Profile
-                    </a>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                      <a className="profile-btn" href={insider.profile_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, margin: 0, textAlign: 'center' }}>
+                        Polymarket Profile
+                      </a>
+                      <button 
+                        className="profile-btn" 
+                        onClick={() => handleViewTrades(insider.wallet)}
+                        style={{ 
+                          flex: 1, 
+                          margin: 0, 
+                          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)', 
+                          border: '1px solid rgba(139, 92, 246, 0.3)',
+                          boxShadow: 'none'
+                        }}
+                      >
+                        Inspect Trades
+                      </button>
+                    </div>
                   </div>
                 );
               })
@@ -465,6 +526,233 @@ function App() {
                 No wallets in this market successfully cleared the MM threshold, domain specialist criteria (&gt;75%), and conviction limits ({targetCategory === 'weather' ? '>= $1k' : '>= $5k'}) with positive PnL.
               </div>
             )}
+          </div>
+        </div>
+      )}
+      {/* Trades Inspect Modal */}
+      {showTradesModal && (
+        <div className="modal-overlay" style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: '2rem'
+        }}>
+          <div className="modal-content" style={{
+            background: '#0c0f17',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '16px',
+            width: '100%',
+            maxWidth: '850px',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '1.5rem',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#fff' }}>Forensic Trade Ledger</h3>
+                <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace' }}>
+                  Wallet: {selectedWalletForTrades}
+                </span>
+              </div>
+              <button 
+                onClick={() => setShowTradesModal(false)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  padding: '0.5rem',
+                  lineHeight: 1
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '1.5rem', overflowY: 'auto', flex: 1 }}>
+              {isLoadingTrades ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '4rem' }}>
+                  <div className="spinner"></div>
+                  <span style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>Querying on-chain logs...</span>
+                </div>
+              ) : (
+                <>
+                  {/* Alert Banner for New Trades */}
+                  {newTrades.length > 0 ? (
+                    <div style={{
+                      background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(4, 120, 87, 0.15) 100%)',
+                      border: '1px solid rgba(16, 185, 129, 0.4)',
+                      borderRadius: '8px',
+                      padding: '1rem',
+                      marginBottom: '1.5rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <span style={{ fontSize: '1.5rem' }}>🔔</span>
+                        <div>
+                          <div style={{ fontWeight: 600, color: '#10b981' }}>New Activity Detected!</div>
+                          <div style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.7)' }}>
+                            Discovered {newTrades.length} new trades since your last check of this wallet.
+                          </div>
+                        </div>
+                      </div>
+                      <span className="badge specialist" style={{ background: '#10b981', color: '#000', fontWeight: 'bold' }}>
+                        +{newTrades.length} NEW
+                      </span>
+                    </div>
+                  ) : (
+                    <div style={{
+                      background: 'rgba(255, 255, 255, 0.02)',
+                      border: '1px solid rgba(255, 255, 255, 0.05)',
+                      borderRadius: '8px',
+                      padding: '0.75rem 1rem',
+                      marginBottom: '1.5rem',
+                      fontSize: '0.85rem',
+                      color: 'rgba(255, 255, 255, 0.45)'
+                    }}>
+                      ℹ️ Trade ledger sync complete. No new trades detected since last check.
+                    </div>
+                  )}
+
+                  {/* Trades List */}
+                  {walletTrades.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '3rem', color: 'rgba(255, 255, 255, 0.3)' }}>
+                      No trade events returned from indexers.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {walletTrades.map((trade, idx) => {
+                        const isNew = newTrades.some(nt => (nt.id === trade.id) || 
+                          (nt.transactionHash === trade.transactionHash && nt.timestamp === trade.timestamp));
+                        const dateStr = formatTradeTimestamp(trade.timestamp);
+                        const isBuy = String(trade.side).toUpperCase() === 'BUY';
+                        
+                        return (
+                          <div key={idx} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
+                            background: isNew ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                            border: isNew ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(255, 255, 255, 0.04)',
+                            borderRadius: '10px',
+                            padding: '1rem',
+                            transition: 'all 0.2s ease'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <span style={{
+                                  padding: '0.25rem 0.6rem',
+                                  borderRadius: '6px',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 'bold',
+                                  background: isBuy ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                  color: isBuy ? '#10b981' : '#f87171',
+                                  border: isBuy ? '1px solid rgba(16, 185, 129, 0.2)' : '1px solid rgba(239, 68, 68, 0.2)'
+                                }}>
+                                  {isBuy ? 'BUY' : 'SELL'}
+                                </span>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                                  Outcome {trade.outcomeIndex !== undefined ? trade.outcomeIndex : 'Index: ' + trade.outcomeIndex}
+                                </span>
+                                {isNew && (
+                                  <span style={{
+                                    fontSize: '0.65rem',
+                                    background: '#10b981',
+                                    color: '#000',
+                                    fontWeight: 'bold',
+                                    padding: '0.1rem 0.4rem',
+                                    borderRadius: '4px'
+                                  }}>NEW</span>
+                                )}
+                              </div>
+                              <span style={{ fontSize: '0.75rem', color: 'rgba(255, 255, 255, 0.3)' }}>
+                                {dateStr}
+                              </span>
+                            </div>
+
+                            <div style={{
+                              display: 'grid',
+                              gridTemplateColumns: 'repeat(4, 1fr)',
+                              gap: '0.5rem',
+                              marginTop: '0.25rem',
+                              fontSize: '0.8rem',
+                              color: 'rgba(255, 255, 255, 0.6)'
+                            }}>
+                              <div>
+                                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>Size</div>
+                                <div style={{ color: '#fff', fontWeight: 500 }}>{parseFloat(trade.size).toLocaleString()}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>Avg Price</div>
+                                <div style={{ color: '#fff', fontWeight: 500 }}>${parseFloat(trade.price).toFixed(3)}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>Total Value</div>
+                                <div style={{ color: '#fff', fontWeight: 500 }}>${(parseFloat(trade.size) * parseFloat(trade.price)).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: '0.65rem', color: 'rgba(255,255,255,0.3)', textTransform: 'uppercase' }}>Tx Link</div>
+                                {trade.transactionHash ? (
+                                  <a href={`https://polygonscan.com/tx/${trade.transactionHash}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-indigo)', textDecoration: 'none' }}>
+                                    Polygonscan ↗
+                                  </a>
+                                ) : (
+                                  <span>N/A</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '1rem 1.5rem',
+              borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              background: 'rgba(255, 255, 255, 0.01)'
+            }}>
+              <button 
+                onClick={() => setShowTradesModal(false)}
+                style={{
+                  padding: '0.5rem 1.5rem',
+                  fontSize: '0.85rem',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  color: '#fff',
+                  boxShadow: 'none'
+                }}
+              >
+                Close Ledger
+              </button>
+            </div>
           </div>
         </div>
       )}
