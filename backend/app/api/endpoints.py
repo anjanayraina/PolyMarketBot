@@ -139,3 +139,40 @@ def resolve_market(query: str = Query(..., description="URL, slug, or title of t
 
     raise HTTPException(status_code=404, detail="Could not resolve market name or URL to any active Polymarket condition IDs.")
 
+@router.get("/bookmarks")
+def get_bookmarks():
+    """
+    Retrieves all bookmarked wallet profiles.
+    """
+    try:
+        tracker = PolymarketInsiderTracker()
+        return tracker.load_bookmarks()
+    except Exception as e:
+        logger.error(f"Error fetching bookmarks: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/bookmarks")
+def add_bookmark(wallet_data: dict):
+    """
+    Saves or updates a bookmarked wallet profile.
+    """
+    try:
+        tracker = PolymarketInsiderTracker()
+        return tracker.save_bookmark(wallet_data)
+    except Exception as e:
+        logger.error(f"Error adding bookmark: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/bookmarks/{wallet}")
+def delete_bookmark(wallet: str):
+    """
+    Deletes a bookmarked wallet profile by address.
+    """
+    try:
+        tracker = PolymarketInsiderTracker()
+        return tracker.delete_bookmark(wallet)
+    except Exception as e:
+        logger.error(f"Error deleting bookmark: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+

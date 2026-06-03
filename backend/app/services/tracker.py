@@ -451,3 +451,57 @@ class PolymarketInsiderTracker:
         self.save_scan_cache(target_condition_id, qualified_insiders, target_category)
                 
         return qualified_insiders
+
+    def load_bookmarks(self) -> List[Dict[str, Any]]:
+        """
+        Loads bookmarked wallet profiles from bookmarks.json.
+        """
+        bookmarks_file = os.path.join(DATA_DIR, "bookmarks.json")
+        if os.path.exists(bookmarks_file):
+            try:
+                with open(bookmarks_file, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading bookmarks: {e}")
+        return []
+
+    def save_bookmark(self, wallet_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        Saves or updates a wallet profile in the bookmarks list.
+        """
+        bookmarks_file = os.path.join(DATA_DIR, "bookmarks.json")
+        bookmarks = self.load_bookmarks()
+        
+        # Remove if already exists to prevent duplicate (case-insensitive)
+        wallet_address = wallet_data.get("wallet", "").lower()
+        bookmarks = [b for b in bookmarks if b.get("wallet", "").lower() != wallet_address]
+        
+        # Append new bookmark
+        bookmarks.append(wallet_data)
+        
+        try:
+            with open(bookmarks_file, "w") as f:
+                json.dump(bookmarks, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error saving bookmark: {e}")
+            
+        return bookmarks
+
+    def delete_bookmark(self, wallet_address: str) -> List[Dict[str, Any]]:
+        """
+        Deletes a wallet from the bookmarks list by address.
+        """
+        bookmarks_file = os.path.join(DATA_DIR, "bookmarks.json")
+        bookmarks = self.load_bookmarks()
+        
+        wallet_address = wallet_address.lower()
+        bookmarks = [b for b in bookmarks if b.get("wallet", "").lower() != wallet_address]
+        
+        try:
+            with open(bookmarks_file, "w") as f:
+                json.dump(bookmarks, f, indent=4)
+        except Exception as e:
+            logger.error(f"Error deleting bookmark: {e}")
+            
+        return bookmarks
+

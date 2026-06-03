@@ -14,6 +14,53 @@ function App() {
   const [newTrades, setNewTrades] = useState([]);
   const [isLoadingTrades, setIsLoadingTrades] = useState(false);
   const [showTradesModal, setShowTradesModal] = useState(false);
+  const [activeTab, setActiveTab] = useState('scan');
+  const [bookmarks, setBookmarks] = useState([]);
+
+  useEffect(() => {
+    fetchBookmarks();
+  }, []);
+
+  const fetchBookmarks = async () => {
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/bookmarks');
+      if (response.ok) {
+        const data = await response.json();
+        setBookmarks(data || []);
+      }
+    } catch (err) {
+      console.error("Error loading bookmarks:", err);
+    }
+  };
+
+  const handleToggleBookmark = async (insider) => {
+    const isBookmarked = bookmarks.some(b => b.wallet.toLowerCase() === insider.wallet.toLowerCase());
+    try {
+      let response;
+      if (isBookmarked) {
+        response = await fetch(`http://127.0.0.1:8000/api/bookmarks/${insider.wallet}`, {
+          method: 'DELETE'
+        });
+      } else {
+        response = await fetch('http://127.0.0.1:8000/api/bookmarks', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(insider)
+        });
+      }
+      
+      if (response.ok) {
+        const updated = await response.json();
+        setBookmarks(updated || []);
+      } else {
+        alert("Failed to update bookmark.");
+      }
+    } catch (err) {
+      alert("Error bookmarking: " + err.message);
+    }
+  };
 
   // Active markets available for selection (Prepopulated with geopolitical presets)
   const [activeMarkets, setActiveMarkets] = useState([
@@ -242,144 +289,333 @@ function App() {
     return 'rating-avoid';
   };
 
+  const renderInsidersGrid = (list, emptyMessage) => {
+    return (
+      <div className="cards-grid">
+        {list.length > 0 ? (
+          list.map((insider, idx) => {
+            let initials = "W";
+            if (insider.pseudonym) {
+              initials = insider.pseudonym.substring(0, 2).toUpperCase();
+            } else if (insider.name) {
+              initials = insider.name.substring(0, 2).toUpperCase();
+            } else if (insider.wallet) {
+              initials = insider.wallet.substring(2, 4).toUpperCase();
+            }
+
+            const displayName = insider.pseudonym || insider.name || "Anonymous Trader";
+            const bioText = insider.bio || "No platform description set.";
+            const formattedAddress = insider.wallet.substring(0, 6) + "..." + insider.wallet.substring(insider.wallet.length - 4);
+            const isBookmarked = bookmarks.some(b => b.wallet.toLowerCase() === insider.wallet.toLowerCase());
+
+            return (
+              <div className="insider-card" key={idx}>
+                <div className="card-header">
+                  {insider.profile_image ? (
+                    <img className="avatar" src={insider.profile_image} alt="Profile avatar" />
+                  ) : (
+                    <div className="avatar">{initials}</div>
+                  )}
+                  <div className="user-details">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div className="display-name" title={displayName}>{displayName}</div>
+                      <button 
+                        onClick={() => handleToggleBookmark(insider)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          fontSize: '1.25rem',
+                          cursor: 'pointer',
+                          color: isBookmarked ? '#fbbf24' : 'rgba(255, 255, 255, 0.2)',
+                          padding: '0.1rem 0.25rem',
+                          lineHeight: 1,
+                          boxShadow: 'none',
+                          minWidth: 'auto'
+                        }}
+                        title={isBookmarked ? "Remove Bookmark" : "Bookmark Trader"}
+                      >
+                        ★
+                      </button>
+                    </div>
+                    <div className="pseudonym-tag">
+                      <span className="address-hash">{formattedAddress}</span>
+                    </div>
+                  </div>
+                  <div className={`rating-badge ${getRatingClass(insider.copy_trade_score)}`}>
+                    <span className="rating-score">{insider.copy_trade_score.toFixed(0)}</span>
+                    <span className="rating-label">{insider.copy_trade_rating.replace(/ \(.+\)/, "")}</span>
+                  </div>
+                </div>
+                
+                <div className="bio-section">
+                  "{bioText}"
+                </div>
+
+                <div className="metrics-grid">
+                  <div className="metric-item">
+                    <span className="metric-label">Aggregated Exposure</span>
+                    <span className="metric-value emerald">
+                      ${parseFloat(insider.target_conviction).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </span>
+                  </div>
+                  
+                  <div className="metric-item">
+                    <span className="metric-label">{targetCategory === 'weather' ? 'Weather Focus' : 'Politics Focus'}</span>
+                    <span className="metric-value indigo">
+                      {(parseFloat(insider.domain_score) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div className="metric-item">
+                    <span className="metric-label">Net Profit (PnL)</span>
+                    <span className="metric-value emerald">
+                      +${parseFloat(insider.net_pnl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </span>
+                  </div>
+
+                  <div className="metric-item">
+                    <span className="metric-label">Win Rate</span>
+                    <span className="metric-value violet">
+                      {(parseFloat(insider.win_rate) * 100).toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div className="metric-item">
+                    <span className="metric-label">Total Trades</span>
+                    <span className="metric-value amber">
+                      {insider.total_trades}
+                    </span>
+                  </div>
+
+                  <div className="metric-item">
+                    <span className="metric-label">Avg Trade Size</span>
+                    <span className="metric-value blue">
+                      ${parseFloat(insider.avg_trade_size).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </span>
+                  </div>
+
+                  <div className="metric-item" style={{ gridColumn: 'span 2', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
+                    <span className="metric-label">Total Portfolio Net Worth</span>
+                    <span className="metric-value platinum">
+                      ${parseFloat(insider.total_portfolio_value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="badges-row">
+                  <span className="badge specialist">{targetCategory === 'weather' ? 'Weather Specialist' : 'Political Specialist'}</span>
+                  <span className="badge execution">{insider.execution_style}</span>
+                  <span className="badge outcome">Outcomes: {insider.target_outcome}</span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <a className="profile-btn" href={insider.profile_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, margin: 0, textAlign: 'center' }}>
+                    Polymarket Profile
+                  </a>
+                  <button 
+                    className="profile-btn" 
+                    onClick={() => handleViewTrades(insider.wallet)}
+                    style={{ 
+                      flex: 1, 
+                      margin: 0, 
+                      background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)', 
+                      border: '1px solid rgba(139, 92, 246, 0.3)',
+                      boxShadow: 'none'
+                    }}
+                  >
+                    Inspect Trades
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        ) : (
+          <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
+            {emptyMessage}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="container">
-      {/* Dashboard Header */}
-      <header>
+      <header style={{ marginBottom: '1.5rem' }}>
         <h1>Polymarket Insider Tracker</h1>
         <p>Discover domain specialists and qualified on-chain insider portfolios with advanced algorithmic filters.</p>
       </header>
 
-      {/* Dynamic Copy-Paste Resolver Panel */}
-      <div className="controls-panel">
-        <div className="input-group">
-          <label htmlFor="customMarketInput">Copy-Paste Market Name, Slug, or Polymarket URL</label>
-          <div className="input-wrapper">
-            <input 
-              type="text" 
-              id="customMarketInput" 
-              placeholder="e.g. https://polymarket.com/event/us-x-iran-permanent-peace-deal-by" 
-              value={customMarketInput}
-              onChange={(e) => setCustomMarketInput(e.target.value)}
-              disabled={isResolving || isScanning}
-            />
-            <button 
-              id="resolveBtn" 
-              onClick={handleResolveMarket} 
-              disabled={isResolving || isScanning}
-              style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)' }}
-            >
-              {isResolving ? "Resolving..." : "Add to Active Markets"}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Active Markets Checklist Section */}
-      <div className="controls-panel" style={{ marginTop: '-1.5rem' }}>
-        <div className="section-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-          <label style={{ margin: 0 }}>Active Markets for Analysis ({activeMarkets.length})</label>
-          <button 
-            onClick={handleSelectAllMarkets} 
-            disabled={isScanning}
-            style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: 'none' }}
-          >
-            {selectedMarketIds.length === activeMarkets.length ? "Deselect All" : "Select All"}
-          </button>
-        </div>
-
-        <div className="markets-checklist" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.5rem' }}>
-          {activeMarkets.map((market) => {
-            const isSelected = selectedMarketIds.includes(market.condition_id);
-            const status = scanStatuses[market.condition_id];
-            
-            return (
-              <div 
-                key={market.condition_id} 
-                onClick={() => !isScanning && handleToggleSelectMarket(market.condition_id)}
-                className={`market-item-row ${isSelected ? 'selected' : ''}`}
-                style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '1rem', 
-                  background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(15, 17, 26, 0.4)', 
-                  border: isSelected ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid rgba(255, 255, 255, 0.04)',
-                  borderRadius: '10px',
-                  padding: '0.75rem 1rem',
-                  cursor: isScanning ? 'not-allowed' : 'pointer',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                <input 
-                  type="checkbox" 
-                  checked={isSelected}
-                  onChange={() => {}} // Handled by div onClick
-                  disabled={isScanning}
-                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
-                />
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
-                    {market.title}
-                  </div>
-                  <div style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'rgba(255,255,255,0.25)', marginTop: '2px' }}>
-                    ID: {market.condition_id}
-                  </div>
-                </div>
-
-                {isScanning && status === 'scanning' && (
-                  <div className="spinner" style={{ width: '16px', height: '16px', borderTopColor: 'var(--color-indigo)' }}></div>
-                )}
-                {status === 'success' && (
-                  <span style={{ color: 'var(--color-emerald)', fontSize: '0.8rem', fontWeight: 600 }}>✓ Scanned</span>
-                )}
-                {status === 'failed' && (
-                  <span style={{ color: 'red', fontSize: '0.8rem', fontWeight: 600 }}>✕ Failed</span>
-                )}
-
-                <button 
-                  onClick={(e) => handleDeleteMarket(market.condition_id, e)} 
-                  disabled={isScanning}
-                  style={{ 
-                    background: 'transparent', 
-                    boxShadow: 'none', 
-                    padding: '0.25rem', 
-                    color: 'rgba(255,255,255,0.2)',
-                    fontSize: '1rem',
-                    border: 'none',
-                    minWidth: 'auto'
-                  }}
-                  onMouseEnter={(e) => e.target.style.color = '#f87171'}
-                  onMouseLeave={(e) => e.target.style.color = 'rgba(255,255,255,0.2)'}
-                >
-                  🗑
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem' }}>
-          <input 
-            type="checkbox" 
-            id="bypassCacheCheckbox" 
-            checked={bypassCache} 
-            onChange={(e) => setBypassCache(e.target.checked)}
-            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-          />
-          <label htmlFor="bypassCacheCheckbox" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--text-secondary)' }}>
-            Force Refresh (Bypass local cache)
-          </label>
-        </div>
-
+      {/* Navigation Tabs */}
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '2rem', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '0.5rem' }}>
         <button 
-          id="scanBtn" 
-          onClick={triggerMultiScan} 
-          disabled={isScanning || selectedMarketIds.length === 0}
-          style={{ width: '100%', marginTop: '0.75rem', padding: '1rem' }}
+          onClick={() => setActiveTab('scan')}
+          style={{
+            background: 'transparent',
+            boxShadow: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'scan' ? '2px solid var(--color-indigo)' : '2px solid transparent',
+            color: activeTab === 'scan' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: 600,
+            borderRadius: 0,
+            padding: '0.5rem 1rem',
+            cursor: 'pointer'
+          }}
         >
-          {isScanning ? "Scanning Selected Markets in Parallel..." : `Scan ${selectedMarketIds.length} Selected Markets`}
+          🔍 Market Scanner
+        </button>
+        <button 
+          onClick={() => { setActiveTab('saved'); fetchBookmarks(); }}
+          style={{
+            background: 'transparent',
+            boxShadow: 'none',
+            border: 'none',
+            borderBottom: activeTab === 'saved' ? '2px solid var(--color-indigo)' : '2px solid transparent',
+            color: activeTab === 'saved' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            fontWeight: 600,
+            borderRadius: 0,
+            padding: '0.5rem 1rem',
+            cursor: 'pointer'
+          }}
+        >
+          ⭐ Saved Traders ({bookmarks.length})
         </button>
       </div>
+
+      {/* Dynamic Copy-Paste Resolver Panel & Checklist (Scanner View Only) */}
+      {activeTab === 'scan' && (
+        <>
+          {/* Dynamic Copy-Paste Resolver Panel */}
+          <div className="controls-panel">
+            <div className="input-group">
+              <label htmlFor="customMarketInput">Copy-Paste Market Name, Slug, or Polymarket URL</label>
+              <div className="input-wrapper">
+                <input 
+                  type="text" 
+                  id="customMarketInput" 
+                  placeholder="e.g. https://polymarket.com/event/us-x-iran-permanent-peace-deal-by" 
+                  value={customMarketInput}
+                  onChange={(e) => setCustomMarketInput(e.target.value)}
+                  disabled={isResolving || isScanning}
+                />
+                <button 
+                  id="resolveBtn" 
+                  onClick={handleResolveMarket} 
+                  disabled={isResolving || isScanning}
+                  style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 4px 14px rgba(16, 185, 129, 0.3)' }}
+                >
+                  {isResolving ? "Resolving..." : "Add to Active Markets"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Markets Checklist Section */}
+          <div className="controls-panel" style={{ marginTop: '-1.5rem' }}>
+            <div className="section-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <label style={{ margin: 0 }}>Active Markets for Analysis ({activeMarkets.length})</label>
+              <button 
+                onClick={handleSelectAllMarkets} 
+                disabled={isScanning}
+                style={{ padding: '0.4rem 1rem', fontSize: '0.8rem', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: 'none' }}
+              >
+                {selectedMarketIds.length === activeMarkets.length ? "Deselect All" : "Select All"}
+              </button>
+            </div>
+
+            <div className="markets-checklist" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', maxHeight: '250px', overflowY: 'auto', paddingRight: '0.5rem' }}>
+              {activeMarkets.map((market) => {
+                const isSelected = selectedMarketIds.includes(market.condition_id);
+                const status = scanStatuses[market.condition_id];
+                
+                return (
+                  <div 
+                    key={market.condition_id} 
+                    onClick={() => !isScanning && handleToggleSelectMarket(market.condition_id)}
+                    className={`market-item-row ${isSelected ? 'selected' : ''}`}
+                    style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '1rem', 
+                      background: isSelected ? 'rgba(99, 102, 241, 0.08)' : 'rgba(15, 17, 26, 0.4)', 
+                      border: isSelected ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid rgba(255, 255, 255, 0.04)',
+                      borderRadius: '10px',
+                      padding: '0.75rem 1rem',
+                      cursor: isScanning ? 'not-allowed' : 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <input 
+                      type="checkbox" 
+                      checked={isSelected}
+                      onChange={() => {}} // Handled by div onClick
+                      disabled={isScanning}
+                      style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.9rem', color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                        {market.title}
+                      </div>
+                      <div style={{ fontFamily: 'monospace', fontSize: '0.7rem', color: 'rgba(255,255,255,0.25)', marginTop: '2px' }}>
+                        ID: {market.condition_id}
+                      </div>
+                    </div>
+
+                    {isScanning && status === 'scanning' && (
+                      <div className="spinner" style={{ width: '16px', height: '16px', borderTopColor: 'var(--color-indigo)' }}></div>
+                    )}
+                    {status === 'success' && (
+                      <span style={{ color: 'var(--color-emerald)', fontSize: '0.8rem', fontWeight: 600 }}>✓ Scanned</span>
+                    )}
+                    {status === 'failed' && (
+                      <span style={{ color: 'red', fontSize: '0.8rem', fontWeight: 600 }}>✕ Failed</span>
+                    )}
+
+                    <button 
+                      onClick={(e) => handleDeleteMarket(market.condition_id, e)} 
+                      disabled={isScanning}
+                      style={{ 
+                        background: 'transparent', 
+                        boxShadow: 'none', 
+                        padding: '0.25rem', 
+                        color: 'rgba(255,255,255,0.2)',
+                        fontSize: '1rem',
+                        border: 'none',
+                        minWidth: 'auto'
+                      }}
+                      onMouseEnter={(e) => e.target.style.color = '#f87171'}
+                      onMouseLeave={(e) => e.target.style.color = 'rgba(255,255,255,0.2)'}
+                    >
+                      🗑
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem' }}>
+              <input 
+                type="checkbox" 
+                id="bypassCacheCheckbox" 
+                checked={bypassCache} 
+                onChange={(e) => setBypassCache(e.target.checked)}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              <label htmlFor="bypassCacheCheckbox" style={{ fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none', color: 'var(--text-secondary)' }}>
+                Force Refresh (Bypass local cache)
+              </label>
+            </div>
+
+            <button 
+              id="scanBtn" 
+              onClick={triggerMultiScan} 
+              disabled={isScanning || selectedMarketIds.length === 0}
+              style={{ width: '100%', marginTop: '0.75rem', padding: '1rem' }}
+            >
+              {isScanning ? "Scanning Selected Markets in Parallel..." : `Scan ${selectedMarketIds.length} Selected Markets`}
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Scanning / Loading Section */}
       {isScanning && (
@@ -395,138 +631,32 @@ function App() {
         </div>
       )}
 
-      {/* Results / Cards Section */}
-      {hasScanned && !isScanning && (
+      {/* Results / Cards Section based on tab selection */}
+      {activeTab === 'scan' ? (
+        <>
+          {hasScanned && !isScanning && (
+            <div className="results-section">
+              <div className="section-title">
+                Discovered Positive-PnL Insiders
+                <span className="badge-count">{insiders.length}</span>
+              </div>
+              {renderInsidersGrid(
+                insiders,
+                `No wallets in this market successfully cleared the MM threshold, domain specialist criteria (>75%), and conviction limits (${targetCategory === 'weather' ? '>= $1k' : '>= $5k'}) with positive PnL.`
+              )}
+            </div>
+          )}
+        </>
+      ) : (
         <div className="results-section">
           <div className="section-title">
-            Discovered Positive-PnL Insiders
-            <span className="badge-count">{insiders.length}</span>
+            Bookmarked Insider Portfolios
+            <span className="badge-count">{bookmarks.length}</span>
           </div>
-          
-          <div className="cards-grid">
-            {insiders.length > 0 ? (
-              insiders.map((insider, idx) => {
-                let initials = "W";
-                if (insider.pseudonym) {
-                  initials = insider.pseudonym.substring(0, 2).toUpperCase();
-                } else if (insider.name) {
-                  initials = insider.name.substring(0, 2).toUpperCase();
-                } else if (insider.wallet) {
-                  initials = insider.wallet.substring(2, 4).toUpperCase();
-                }
-
-                const displayName = insider.pseudonym || insider.name || "Anonymous Trader";
-                const bioText = insider.bio || "No platform description set.";
-                const formattedAddress = insider.wallet.substring(0, 6) + "..." + insider.wallet.substring(insider.wallet.length - 4);
-
-                return (
-                  <div className="insider-card" key={idx}>
-                    <div className="card-header">
-                      {insider.profile_image ? (
-                        <img className="avatar" src={insider.profile_image} alt="Profile avatar" />
-                      ) : (
-                        <div className="avatar">{initials}</div>
-                      )}
-                      <div className="user-details">
-                        <div className="display-name" title={displayName}>{displayName}</div>
-                        <div className="pseudonym-tag">
-                          <span className="address-hash">{formattedAddress}</span>
-                        </div>
-                      </div>
-                      <div className={`rating-badge ${getRatingClass(insider.copy_trade_score)}`}>
-                        <span className="rating-score">{insider.copy_trade_score.toFixed(0)}</span>
-                        <span className="rating-label">{insider.copy_trade_rating.replace(/ \(.+\)/, "")}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="bio-section">
-                      "{bioText}"
-                    </div>
-
-                    <div className="metrics-grid">
-                      <div className="metric-item">
-                        <span className="metric-label">Aggregated Exposure</span>
-                        <span className="metric-value emerald">
-                          ${parseFloat(insider.target_conviction).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </span>
-                      </div>
-                      
-                      <div className="metric-item">
-                        <span className="metric-label">{targetCategory === 'weather' ? 'Weather Focus' : 'Politics Focus'}</span>
-                        <span className="metric-value indigo">
-                          {(parseFloat(insider.domain_score) * 100).toFixed(1)}%
-                        </span>
-                      </div>
-
-                      <div className="metric-item">
-                        <span className="metric-label">Net Profit (PnL)</span>
-                        <span className="metric-value emerald">
-                          +${parseFloat(insider.net_pnl).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </span>
-                      </div>
-
-                      <div className="metric-item">
-                        <span className="metric-label">Win Rate</span>
-                        <span className="metric-value violet">
-                          {(parseFloat(insider.win_rate) * 100).toFixed(1)}%
-                        </span>
-                      </div>
-
-                      <div className="metric-item">
-                        <span className="metric-label">Total Trades</span>
-                        <span className="metric-value amber">
-                          {insider.total_trades}
-                        </span>
-                      </div>
-
-                      <div className="metric-item">
-                        <span className="metric-label">Avg Trade Size</span>
-                        <span className="metric-value blue">
-                          ${parseFloat(insider.avg_trade_size).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </span>
-                      </div>
-
-                      <div className="metric-item" style={{ gridColumn: 'span 2', borderTop: '1px solid rgba(255, 255, 255, 0.05)', paddingTop: '0.5rem', marginTop: '0.25rem' }}>
-                        <span className="metric-label">Total Portfolio Net Worth</span>
-                        <span className="metric-value platinum">
-                          ${parseFloat(insider.total_portfolio_value).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="badges-row">
-                      <span className="badge specialist">{targetCategory === 'weather' ? 'Weather Specialist' : 'Political Specialist'}</span>
-                      <span className="badge execution">{insider.execution_style}</span>
-                      <span className="badge outcome">Outcomes: {insider.target_outcome}</span>
-                    </div>
-
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                      <a className="profile-btn" href={insider.profile_url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, margin: 0, textAlign: 'center' }}>
-                        Polymarket Profile
-                      </a>
-                      <button 
-                        className="profile-btn" 
-                        onClick={() => handleViewTrades(insider.wallet)}
-                        style={{ 
-                          flex: 1, 
-                          margin: 0, 
-                          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(139, 92, 246, 0.2) 100%)', 
-                          border: '1px solid rgba(139, 92, 246, 0.3)',
-                          boxShadow: 'none'
-                        }}
-                      >
-                        Inspect Trades
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
-            ) : (
-              <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                No wallets in this market successfully cleared the MM threshold, domain specialist criteria (&gt;75%), and conviction limits ({targetCategory === 'weather' ? '>= $1k' : '>= $5k'}) with positive PnL.
-              </div>
-            )}
-          </div>
+          {renderInsidersGrid(
+            bookmarks,
+            "No bookmarked traders yet. Save discovered insiders from the scanner tab to keep track of them here."
+          )}
         </div>
       )}
       {/* Trades Inspect Modal */}
