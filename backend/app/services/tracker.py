@@ -23,6 +23,7 @@ class PolymarketInsiderTracker:
         })
         # Cache to prevent duplicate category lookups for events
         self.event_politics_cache: Dict[str, bool] = {}
+        self.event_category_cache: Dict[str, str] = {}
         # Store holder profile metadata mapping lower_case_wallet -> metadata dict
         self.holders_metadata: Dict[str, Dict[str, Any]] = {}
         
@@ -106,33 +107,50 @@ class PolymarketInsiderTracker:
     def is_political_event(self, event_id: str) -> bool:
         """
         Helper method to check if a specific event belongs to the Politics category.
+        """
+        return self.get_event_category(event_id) == "politics"
+
+    def get_event_category(self, event_id: str) -> str:
+        """
+        Helper method to resolve the specific category (politics, weather, other) of an event.
         Includes local caching to prevent redundant API queries.
         """
         if not event_id:
-            return False
+            return "other"
             
-        if event_id in self.event_politics_cache:
-            return self.event_politics_cache[event_id]
+        if event_id in self.event_category_cache:
+            return self.event_category_cache[event_id]
             
         url = f"{self.GAMMA_API_BASE}/events/{event_id}"
         event_data = self._get(url)
         
-        is_politics = False
+        category = "other"
         if event_data:
             tags = event_data.get("tags", [])
             for tag in tags:
                 label = str(tag.get("label", "")).lower()
                 slug = str(tag.get("slug", "")).lower()
                 if "politics" in label or "politics" in slug:
-                    is_politics = True
+                    category = "politics"
                     break
+                elif "weather" in label or "weather" in slug or "climate" in label or "climate" in slug:
+                    category = "weather"
+                    break
+            
+            # Fallback text scanning
+            if category == "other":
+                title = str(event_data.get("title", "")).lower()
+                desc = str(event_data.get("description", "")).lower()
+                if any(kw in title or kw in desc for kw in ["politics", "election", "biden", "trump", "harris", "democrat", "republican"]):
+                    category = "politics"
+                elif any(kw in title or kw in desc for kw in ["weather", "temp", "climate", "rain", "snow", "degree", "wind", "storm", "hurricane", "flood", "heatwave", "celsius", "fahrenheit"]):
+                    category = "weather"
                     
-        self.event_politics_cache[event_id] = is_politics
-        # Polite delay to be kind to the Gamma API
+        self.event_category_cache[event_id] = category
         time.sleep(0.1)
-        return is_politics
+        return category
 
-    def analyze_wallet(self, user_address: str, target_condition_id: str) -> Optional[Dict[str, Any]]:
+    def analyze_wallet(self, user_address: str, target_condition_id: str, target_category: str = "politics") -> Optional[Dict[str, Any]]:
         """
         Analyzes a single wallet's portfolio allocation, trade execution, and directional conviction.
         Applies strict filtering heuristics using pandas.
@@ -163,17 +181,17 @@ class PolymarketInsiderTracker:
             logger.info(f"Wallet {user_address} failed Profitability Filter (Net PnL must be > 0, current: ${net_pnl:,.2f}).")
             return None
             
-        # Determine political exposure for each position
-        df_pos['is_politics'] = df_pos['eventId'].apply(self.is_political_event)
-        political_value = df_pos[df_pos['is_politics']]['currentValue'].sum()
+        # Determine target category exposure for each position to verify specialist focus
+        df_pos['category'] = df_pos['eventId'].apply(self.get_event_category)
+        domain_value = df_pos[df_pos['category'] == target_category]['currentValue'].sum()
         
-        # Domain Specialist Filter: Politics makes up > 75% of total allocation
-        politics_ratio = political_value / total_portfolio_value
-        if politics_ratio <= 0.75:
-            logger.debug(f"Wallet {user_address} failed Domain Specialist Filter. Politics Ratio: {politics_ratio:.2%}")
+        # Domain Specialist Filter: Target category makes up > 75% of total allocation
+        domain_ratio = domain_value / total_portfolio_value
+        if domain_ratio <= 0.75:
+            logger.debug(f"Wallet {user_address} failed Domain Specialist Filter. {target_category.capitalize()} Ratio: {domain_ratio:.2%}")
             return None
             
-        # Conviction Threshold: directional position size of >= $5,000 on a single outcome
+        # Conviction Threshold: directional position size on a single outcome
         target_positions = df_pos[df_pos['conditionId'].str.lower() == target_condition_id.lower()]
         if target_positions.empty:
             logger.debug(f"Wallet {user_address} holds no active positions in the target market.")
@@ -182,8 +200,12 @@ class PolymarketInsiderTracker:
         max_conviction_pos = target_positions.loc[target_positions['currentValue'].idxmax()]
         conviction_size = max_conviction_pos['currentValue']
         
-        if conviction_size < 5000.0:
-            logger.debug(f"Wallet {user_address} failed Conviction Threshold. Max Position: ${conviction_size:,.2f}")
+        conviction_threshold = 5000.0
+        if target_category == "weather":
+            conviction_threshold = 1000.0
+            
+        if conviction_size < conviction_threshold:
+            logger.debug(f"Wallet {user_address} failed Conviction Threshold. Max Position: ${conviction_size:,.2f} (Required: ${conviction_threshold:,.2f})")
             return None
             
         target_outcome = max_conviction_pos.get('outcome', 'Unknown')
@@ -246,9 +268,12 @@ class PolymarketInsiderTracker:
         
         # Calculate Copy-Trade Fit Score (0 - 100)
         win_rate_score = win_rate * 30.0
-        net_pnl_score = min(30.0, (max(0.0, net_pnl) / 20000.0) * 30.0)
+        pnl_divisor = 20000.0
+        if target_category == "weather":
+            pnl_divisor = 5000.0
+        net_pnl_score = min(30.0, (max(0.0, net_pnl) / pnl_divisor) * 30.0)
         trade_depth_score = min(20.0, (global_total_trades / 40.0) * 20.0)
-        domain_specialist_score = politics_ratio * 20.0
+        domain_specialist_score = domain_ratio * 20.0
         
         copy_trade_score = win_rate_score + net_pnl_score + trade_depth_score + domain_specialist_score
         copy_trade_score = max(0.0, min(100.0, copy_trade_score))
@@ -261,7 +286,7 @@ class PolymarketInsiderTracker:
             copy_trade_rating = "Caution (Speculative)"
         else:
             copy_trade_rating = "Avoid (High Risk)"
-
+ 
         # Fetch cached metadata
         meta = self.holders_metadata.get(user_address.lower(), {})
         
@@ -273,8 +298,8 @@ class PolymarketInsiderTracker:
             "profile_image": meta.get("profileImage", ""),
             "profile_url": meta.get("profileUrl", f"https://polymarket.com/profile/{user_address}"),
             "total_portfolio_value": total_portfolio_value,
-            "political_exposure": political_value,
-            "domain_score": politics_ratio,
+            "political_exposure": domain_value,
+            "domain_score": domain_ratio,
             "target_conviction": conviction_size,
             "target_outcome": target_outcome,
             "execution_style": execution_style,
@@ -291,6 +316,24 @@ class PolymarketInsiderTracker:
         Runs the complete discovery pipeline and returns a list of qualified domain specialist profiles.
         """
         logger.info("Initializing Polymarket Insider Discovery Pipeline...")
+        
+        # Resolve target event category
+        target_category = "politics"
+        try:
+            url = f"{self.GAMMA_API_BASE}/markets"
+            market_data = self._get(url, params={"conditionId": target_condition_id})
+            if market_data and isinstance(market_data, list) and len(market_data) > 0:
+                events = market_data[0].get("events", [])
+                if events:
+                    event_id = events[0].get("id")
+                    target_category = self.get_event_category(event_id)
+                    logger.info(f"Target market identified as category: {target_category.upper()}")
+        except Exception as e:
+            logger.error(f"Error identifying target market category: {e}")
+
+        # Store last target category for reference
+        self.last_target_category = target_category
+
         holders = self.fetch_top_holders(target_condition_id)
         
         if not holders:
@@ -302,7 +345,7 @@ class PolymarketInsiderTracker:
         for idx, wallet in enumerate(holders):
             logger.info(f"Processing wallet [{idx+1}/{len(holders)}]: {wallet}")
             try:
-                insider_profile = self.analyze_wallet(wallet, target_condition_id)
+                insider_profile = self.analyze_wallet(wallet, target_condition_id, target_category)
                 if insider_profile:
                     logger.info(f"[!] MATCH DETECTED: {wallet} qualified as an Insider!")
                     qualified_insiders.append(insider_profile)

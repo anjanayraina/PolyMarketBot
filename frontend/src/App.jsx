@@ -7,6 +7,7 @@ function App() {
   const [activeStep, setActiveStep] = useState(0);
   const [insiders, setInsiders] = useState([]);
   const [hasScanned, setHasScanned] = useState(false);
+  const [targetCategory, setTargetCategory] = useState('politics');
 
   // Active markets available for selection (Prepopulated with geopolitical presets)
   const [activeMarkets, setActiveMarkets] = useState([
@@ -148,6 +149,9 @@ function App() {
           }
           const data = await response.json();
           setScanStatuses(prev => ({ ...prev, [id]: 'success' }));
+          if (data.target_category) {
+            setTargetCategory(data.target_category);
+          }
           return data.insiders || [];
         } catch (err) {
           setScanStatuses(prev => ({ ...prev, [id]: 'failed' }));
@@ -402,7 +406,7 @@ function App() {
                       </div>
                       
                       <div className="metric-item">
-                        <span className="metric-label">Politics Focus</span>
+                        <span className="metric-label">{targetCategory === 'weather' ? 'Weather Focus' : 'Politics Focus'}</span>
                         <span className="metric-value indigo">
                           {(parseFloat(insider.domain_score) * 100).toFixed(1)}%
                         </span>
@@ -445,7 +449,7 @@ function App() {
                     </div>
 
                     <div className="badges-row">
-                      <span className="badge specialist">Political Specialist</span>
+                      <span className="badge specialist">{targetCategory === 'weather' ? 'Weather Specialist' : 'Political Specialist'}</span>
                       <span className="badge execution">{insider.execution_style}</span>
                       <span className="badge outcome">Outcomes: {insider.target_outcome}</span>
                     </div>
@@ -458,7 +462,7 @@ function App() {
               })
             ) : (
               <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' }}>
-                No wallets in this market successfully cleared the MM threshold, domain specialist criteria (&gt;75%), and conviction limits (&gt;= $5k) with positive PnL.
+                No wallets in this market successfully cleared the MM threshold, domain specialist criteria (&gt;75%), and conviction limits ({targetCategory === 'weather' ? '>= $1k' : '>= $5k'}) with positive PnL.
               </div>
             )}
           </div>

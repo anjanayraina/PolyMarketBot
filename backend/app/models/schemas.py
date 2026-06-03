@@ -24,5 +24,6 @@ class InsiderProfile(BaseModel):
 class ScanResponse(BaseModel):
     status: str = Field(..., description="Status of the scan query execution.")
     condition_id: str = Field(..., description="The market condition ID analyzed.")
+    target_category: Optional[str] = Field("politics", description="The resolved category of the target market (e.g. politics, weather).")
     count: int = Field(..., description="Total number of qualified domain specialist portfolios.")
     insiders: List[InsiderProfile] = Field(..., description="A list of qualified insider profiles.")

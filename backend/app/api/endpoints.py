@@ -23,9 +23,11 @@ def scan_market(
     try:
         tracker = PolymarketInsiderTracker()
         results = tracker.run_pipeline(condition_id)
+        target_category = getattr(tracker, "last_target_category", "politics")
         return {
             "status": "success",
             "condition_id": condition_id,
+            "target_category": target_category,
             "count": len(results),
             "insiders": results
         }
